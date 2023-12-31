@@ -1,25 +1,71 @@
 {
   "$schema": "https://www.raycast.com/schemas/extension.json",
   "name": "raycast-bring",
-  "title": "raycast-bring",
-  "description": "",
-  "icon": "command-icon.png",
+  "title": "Bring!",
+  "description": "Lets you add items to your bring shopping list",
+  "icon": "bring-logo.png",
   "author": "dw-herrmann",
   "owner": "dw-herrman",
+  "version": "0.1.0",
   "categories": [
     "Productivity"
   ],
   "license": "MIT",
+  "preferences": [
+    {
+      "name": "email",
+      "title": "Email",
+      "description": "Your email address",
+      "type": "textfield",
+      "defaultValue": "",
+      "required": true
+    },
+    {
+      "name": "password",
+      "title": "Password",
+      "description": "Your password",
+      "type": "password",
+      "defaultValue": "",
+      "required": true
+    },
+    {
+      "name": "showRecent",
+      "title": "Show recent items",
+      "description": "Show recently bought items",
+      "type": "checkbox",
+      "defaultValue": "",
+      "required": false
+    }
+  ],
   "commands": [
     {
       "name": "index",
-      "title": "manageShoppingList",
-      "description": "Template for showing a static list and a detail view",
-      "mode": "view"
+      "title": "Shopping list",
+      "description": "Template for running a script without any view",
+      "mode": "view",
+      "icon": "bring-logo.png",
+      "arguments": [
+        {
+          "name": "items",
+          "placeholder": "add item/s",
+          "type": "text",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "openBring",
+      "title": "Open Bring! in browser",
+      "description": "Opens the Bring! website in your default browser",
+      "subtitle": "Opens the Bring! website in your default browser",
+      "mode": "no-view"
     }
   ],
   "dependencies": {
-    "@raycast/api": "^1.64.4"
+    "@raycast/api": "^1.64.4",
+    "@raycast/utils": "^1.10.1",
+    "bring-shopping": "^1.5.1",
+    "open": "^10.0.2"
   },
   "devDependencies": {
     "@raycast/eslint-config": "^1.0.6",
