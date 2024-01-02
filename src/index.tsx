@@ -1,7 +1,7 @@
-import { Action, ActionPanel, LaunchProps, List, getPreferenceValues, clearSearchBar, Icon, LocalStorage } from "@raycast/api";
+import { Action, ActionPanel, LaunchProps, List, getPreferenceValues, clearSearchBar, Icon, LocalStorage, openExtensionPreferences, closeMainWindow, PopToRootType, showToast, Toast } from "@raycast/api";
+import { runAppleScript } from "@raycast/utils";
 import bringApi from "bring-shopping";
 import { useEffect, useRef, useState } from "react";
-
 
 const preferences = getPreferenceValues();
 
@@ -9,6 +9,16 @@ const bring = new bringApi({
   mail: preferences.email,
   password: preferences.password,
 });
+
+interface List {
+  listUuid: string;
+  name: string;
+}
+
+interface Item {
+  name: string;
+  specification: string;
+}
 
 
 export default function Command(props: LaunchProps) {
@@ -26,33 +36,85 @@ export default function Command(props: LaunchProps) {
   * 
   * * * * * */
 
+  const loginStatus = useRef("empty"); // success, error, loading, empty
+
+  const [loginStatusObject, setLoginStatusObject] = useState({
+    errorCode: 0,
+    errorMessage: "",
+  });
+
   const bringLogin = async () => {
-    // console.log("bringLogin");
+
     try {
-      await bring.login();
-    } catch (e: any) {
-      console.error(`Error on Login: ${e.message}`);
+      await bring.login().then(() => {
+        console.log("login success");
+      });
+
+      loginStatus.current = "success";
+    } catch (e) {
+
+      // when error is 400, login failed
+      const errorMessage = e.toString();
+
+      console.log("errorMessage: " + errorMessage);
+
+
+      if (errorMessage.includes("400") || errorMessage.includes("401")) {
+        setLoginStatusObject({
+          errorCode: 400,
+          errorMessage: "Invalid Mail or Password. Please check your login data.",
+        });
+      } else if (errorMessage.includes("Cannot Login: Error: getaddrinfo ENOTFOUND api.getbring.com")) {
+        setLoginStatusObject({
+          errorCode: 0,
+          errorMessage: "Check your internet connection.",
+        });
+      } else {
+        setLoginStatusObject({
+          errorCode: 0,
+          errorMessage: e.toString(),
+        });
+      }
+
+      showToast({
+        style: Toast.Style.Failure,
+        title: "Error",
+        message: "login failed",
+      })
+
+      loginStatus.current = "error";
     }
   }
 
   // array of all lists
-  let [currentList, setCurrentList] = useState("");
-  let [allLists, setAllLists] = useState<Array<object>>([]);
+  const [currentList, setCurrentList] = useState("");
+  const [allLists, setAllLists] = useState<Array<object>>([]);
   const { items: userGivenItems } = props.arguments;
-
-
 
 
   // initialize idle state
   const init = async () => {
     console.log("init");
+    setIsLoading(true);
+
+    const toast = await showToast({
+      style: Toast.Style.Animated,
+      title: "updating ...",
+    })
 
     // login to Bring!
     await bringLogin();
 
+    // when login failed, show error
+    if (loginStatus.current === "error") {
+      console.error("login failed");
+      setIsLoading(false);
+      return;
+    }
+
     // fetch listUuid from storage
-    let listUuidFromStore = await LocalStorage.getItem("shoppingListName");
-    let ListsFromAPI = await fetchLists().then(({ lists }) => {
+    const listUuidFromStore = await LocalStorage.getItem("shoppingListName");
+    const ListsFromAPI = await fetchLists().then(({ lists }) => {
       return lists;
     });
     setAllLists(ListsFromAPI);
@@ -60,11 +122,11 @@ export default function Command(props: LaunchProps) {
 
     if (listUuidFromStore) {
 
-      let storedUuidIsValid = ListsFromAPI.find((list: any) => list.listUuid === listUuidFromStore);
+      const storedUuidIsValid = ListsFromAPI.find((list) => list.listUuid === listUuidFromStore);
       if (storedUuidIsValid) {
         tempCurrentList = listUuidFromStore.toString();
       } else {
-        let firstList = ListsFromAPI[0].listUuid.toString();
+        const firstList = ListsFromAPI[0].listUuid.toString();
         tempCurrentList = firstList;
       }
     }
@@ -78,6 +140,8 @@ export default function Command(props: LaunchProps) {
 
     addItemsToList(userGivenItems, tempCurrentList);
 
+    // remove loading indicator
+    toast.hide();
   }
 
   useEffect(() => {
@@ -94,7 +158,7 @@ export default function Command(props: LaunchProps) {
   // fetch all lists
   const fetchLists = async () => {
     console.log("fetch lists");
-    await bringLogin();
+    // await bringLogin();
     const fetchedLists = await bring.loadLists();
     console.log("lists fetched");
     return fetchedLists;
@@ -115,12 +179,13 @@ export default function Command(props: LaunchProps) {
   // fetch items of selected list
   const fetchItemsOnList = async (list: string = currentList) => {
     console.log("fetch items on list");
-    await bringLogin();
+    // await bringLogin();
     const tempItemList = await bring.getItems(list); // get shopping list
     setItemList(tempItemList); // update shopping list
     console.log(tempItemList);
 
     console.log("items on list fetched");
+    setIsLoading(false);
   }
 
   // add item to selected list (item is a string of comma separated items) (list is a string of listUuid, if empty, use currentList)
@@ -128,10 +193,19 @@ export default function Command(props: LaunchProps) {
     if (!items) return fetchItemsOnList(list);
 
     console.log("add items to list");
-    await bringLogin();
-    for (let itemName of items.split(",")) {
+
+    const itemNames = items.split(/,/).map((item) => item.trim());
+
+    for (const itemName of itemNames.slice(0, 10)) {
       await bring.saveItem(list, itemName, "");
     }
+
+    showToast({
+      style: Toast.Style.Success,
+      title: "added:",
+      message: itemNames.slice(0, 10).join(", "),
+    })
+
     await fetchItemsOnList(list);
   }
 
@@ -139,27 +213,16 @@ export default function Command(props: LaunchProps) {
   // remove item from selected list
   const removeItemFromList = async (items: string, list: string = currentList) => {
     console.log("remove item from list");
-    await bringLogin();
-    await bring.removeItem(list, items);
+    // await bringLogin();
+    await bring.moveToRecentList(list, items);
     await fetchItemsOnList(list);
+
+    showToast({
+      style: Toast.Style.Success,
+      title: "removed:",
+      message: items,
+    })
   }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -174,8 +237,6 @@ export default function Command(props: LaunchProps) {
   // loading indicator
   const [isLoading, setIsLoading] = useState(true);
 
-
-
   // form input
   const [uiSearchTerm, setUiSearchTerm] = useState("");
   const [uiSelectedItem, setUiSelectedItem] = useState("");
@@ -185,108 +246,190 @@ export default function Command(props: LaunchProps) {
 
   }, [uiSelectedItem]);
 
-  const uiAddInputToList = async (input: string, listUuid: string = currentList) => {
-    await bringLogin();
-    await addItemsToList(input, listUuid);
+  const uiAddSearchTermToList = async (tempSearchTerm: string = uiSearchTerm, listUuid: string = currentList) => {
+
+    console.log("tempSearchTerm", tempSearchTerm);
+    console.log("listUuid", listUuid);
+
+
+
+    setIsLoading(true);
+    clearSearchBar();
+
+    await addItemsToList(tempSearchTerm, listUuid);
     await fetchItemsOnList(listUuid);
   }
 
-  const uiAddSearchTermToList = async (tempSearchTerm: string = uiSearchTerm, listUuid: string = currentList) => {
-    await uiAddInputToList(uiSearchTerm, listUuid);
-    clearSearchBar();
-  }
-
   const uiAddSelectedItemToList = async (tempSelectedItem: string = uiSelectedItem, listUuid: string = currentList) => {
+    setIsLoading(true);
+
     await addItemsToList(tempSelectedItem, listUuid);
   }
 
+  const uiRemoveSelectedItemFromList = async (tempSelectedItem: string = uiSelectedItem, listUuid: string = currentList) => {
+    setIsLoading(true);
+
+    await removeItemFromList(tempSelectedItem, listUuid);
+  }
+
+  const uiSelectList = async (tempListUuid: string = currentList) => {
+    setIsLoading(true);
+
+    await selectList(tempListUuid);
+  }
+
+
+  const uiOpenBring = async () => {
+    // find out position of currentList in allLists
+    const listIndex = allLists.findIndex((list: List) => list.listUuid === currentList);
+    const url = "https://web.getbring.com/app/lists/" + listIndex + "/";
+
+    await runAppleScript(`
+      open location "${url}"
+    `);
+  };
+
+
+  // error handling
+
+  const uiGoToPreferences = async () => {
+    await closeMainWindow({ popToRootType: PopToRootType.Immediate });
+    openExtensionPreferences();
+  }
+
+
   return (
-    // whole List UI
-    <List
-      // isLoading={isLoading}
-      searchBarPlaceholder="Search and add items ..."
-      filtering={true}
-      onSearchTextChange={setUiSearchTerm}
-      onSelectionChange={(tempSelectedItem) => {
-        setUiSelectedItem(String(tempSelectedItem));
-      }}
-      searchBarAccessory={
-        // Dropdown to select Shopping List
-        <List.Dropdown
-          tooltip="Show availability in a different country"
-          onChange={selectList}
-          defaultValue={currentList}
+    <>
+      {loginStatus.current === "error" ?
+        // Error Handling
+        <List
+          filtering={false}
+          searchBarPlaceholder={"Search and add items ..." + loginStatus.current}
+          isShowingDetail
         >
-          {allLists.map((singleList: any) => (
-            <List.Dropdown.Item
-              key={singleList.listUuid}
-              title={singleList.name}
-              value={singleList.listUuid}
-            />
-          ))}
-        </List.Dropdown>
-      }
-    >
-      <List.Section title="On shopping List">
-        {itemList
-          && itemList.purchase
-          && Object.values(itemList.purchase).map((item: any, index: number) => (
+
+          <List.Item
+            title="Change Login Data"
+            icon={Icon.Cog}
+            detail={
+              <List.Item.Detail
+                markdown={loginStatusObject.errorMessage ? "## " + loginStatusObject.errorMessage + " " : "## Error ...;"}
+                metadata={
+                  <List.Item.Detail.Metadata>
+                    <List.Item.Detail.Metadata.Label title={`email: ${preferences.email}`} />
+                    <List.Item.Detail.Metadata.Separator />
+                    <List.Item.Detail.Metadata.Label title={`password: ${"•".repeat(preferences.password.length)}`} />
+                    <List.Item.Detail.Metadata.Separator />
+                  </List.Item.Detail.Metadata>
+                }
+              />
+            }
+            actions={
+              <ActionPanel>
+                <Action
+                  title="Open Preferences"
+                  onAction={uiGoToPreferences}
+                />
+              </ActionPanel>
+            }
+          />
+        </List>
+        :
+        // Main UI
+        <List
+          isLoading={isLoading}
+          searchBarPlaceholder={"Search and add items ..."}
+          filtering={true}
+          onSearchTextChange={setUiSearchTerm}
+          onSelectionChange={(tempSelectedItem) => {
+            setUiSelectedItem(String(tempSelectedItem));
+          }}
+          searchBarAccessory={
+            // Dropdown to select Shopping List
+            <List.Dropdown
+              tooltip="Show availability in a different country"
+              onChange={uiSelectList}
+              defaultValue={currentList}
+            >
+              {allLists.map((singleList: List) => (
+                <List.Dropdown.Item
+                  key={singleList.listUuid}
+                  title={singleList.name}
+                  value={singleList.listUuid}
+                />
+              ))}
+            </List.Dropdown>
+          }
+        >
+          <List.Section title="On shopping List">
+            {itemList
+              && itemList.purchase
+              && Object.values(itemList.purchase).map((item: Item) => (
+                <List.Item
+                  key={item.name}
+                  title={uiSelectedItem == item.name ? "" + item.name : item.name}
+                  subtitle={item.specification}
+                  icon={uiSelectedItem == item.name ? Icon.CheckCircle : Icon.Circle}
+                  id={item.name}
+                  detail={item.specification}
+                  actions={
+                    <ActionPanel>
+                      <Action
+                        title={`remove "${item.name}"`}
+                        onAction={() => { uiRemoveSelectedItemFromList(item.name) }}
+                        icon={Icon.Trash}
+                      />
+                      <Action
+                        title={`open List in browser`}
+                        onAction={uiOpenBring}
+                        icon={Icon.Globe}
+                      />
+                    </ActionPanel>
+                  }
+                />
+              ))}
+          </List.Section>
+          {uiSearchTerm &&
             <List.Item
-              key={item.name}
-              title={uiSelectedItem == item.name ? "" + item.name : item.name}
-              icon={uiSelectedItem == item.name ? Icon.CheckCircle : Icon.Circle}
-              id={item.name}
+              key={"add"}
+              title={"add " + uiSearchTerm}
+              icon={Icon.Plus}
               actions={
                 <ActionPanel>
                   <Action
-                    title={`remove "${item.name}"`}
-                    onAction={() => { removeItemFromList(item.name) }}
-                    icon={Icon.Trash}
+                    title={"add " + uiSearchTerm}
+                    onAction={() => { uiAddSearchTermToList() }}
                   />
                 </ActionPanel>
               }
             />
-          ))}
-      </List.Section>
-      {uiSearchTerm &&
-        <List.Item
-          key={"add"}
-          title={"add " + uiSearchTerm}
-          icon={Icon.Plus}
-          actions={
-            <ActionPanel>
-              <Action
-                title={"add " + uiSearchTerm}
-                onAction={uiAddSearchTermToList}
-              />
-            </ActionPanel>
           }
-        />
-      }
 
-      {preferences.showRecent &&
-        <List.Section title="Recently bought">
-          {itemList
-            && itemList.recently
-            && Object.values(itemList.recently).map((item: any, index: number) => (
-              <List.Item
-                key={item.name}
-                title={uiSelectedItem == item.name ? item.name : item.name}
-                icon={uiSelectedItem == item.name ? Icon.Plus : Icon.Plus}
-                id={item.name}
-                actions={
-                  <ActionPanel>
-                    <Action
-                      title={`add "${item.name}"`}
-                      onAction={() => { uiAddSelectedItemToList(item.name) }}
-                      icon={Icon.Trash}
-                    />
-                  </ActionPanel>
-                }
-              />
-            ))}
-        </List.Section>
+          {preferences.showRecent &&
+            <List.Section title="Recently bought">
+              {itemList
+                && itemList.recently
+                && Object.values(itemList.recently).map((item: Item) => (
+                  <List.Item
+                    key={item.name}
+                    title={uiSelectedItem == item.name ? item.name : item.name}
+                    icon={uiSelectedItem == item.name ? Icon.Plus : Icon.Plus}
+                    id={item.name}
+                    actions={
+                      <ActionPanel>
+                        <Action
+                          title={`Add "${item.name}"`}
+                          onAction={() => { uiAddSelectedItemToList(item.name) }}
+                          icon={Icon.Trash}
+                        />
+                      </ActionPanel>
+                    }
+                  />
+                ))}
+            </List.Section>
+          }
+        </List>
       }
-    </List>
+    </>
   );
 }

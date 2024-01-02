@@ -1,3 +1,3 @@
 # raycast-bring Changelog
 
-## [Initial Version] - 2023-12-31
+## [Initial Version] - 2024-01-01

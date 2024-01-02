@@ -1,8 +1,8 @@
 {
   "$schema": "https://www.raycast.com/schemas/extension.json",
   "name": "raycast-bring",
-  "title": "Bring!",
-  "description": "Lets you add items to your bring shopping list",
+  "title": "Bring! Shopping List",
+  "description": "Lets you view your Shopping List and add or remove items.",
   "icon": "bring-logo.png",
   "author": "dw-herrmann",
   "owner": "dw-herrman",
@@ -29,9 +29,10 @@
       "required": true
     },
     {
+      "label": "Show recent items",
       "name": "showRecent",
-      "title": "Show recent items",
-      "description": "Show recently bought items",
+      "title": "Show the items you recently bought",
+      "description": "Show the items you recently bought",
       "type": "checkbox",
       "defaultValue": "",
       "required": false
@@ -40,14 +41,15 @@
   "commands": [
     {
       "name": "index",
-      "title": "Shopping list",
+      "title": "View or Edit Shopping List",
       "description": "Template for running a script without any view",
       "mode": "view",
       "icon": "bring-logo.png",
       "arguments": [
         {
           "name": "items",
-          "placeholder": "add item/s",
+          "placeholder": "Add item/s (optional)",
+          "description": "Add multiple items by separating them with a comma",
           "type": "text",
           "required": false
         }
@@ -55,7 +57,7 @@
     },
     {
       "name": "openBring",
-      "title": "Open Bring! in browser",
+      "title": "Open Bring! in Browser",
       "description": "Opens the Bring! website in your default browser",
       "subtitle": "Opens the Bring! website in your default browser",
       "mode": "no-view"
@@ -73,6 +75,7 @@
     "@types/react": "18.2.27",
     "eslint": "^8.51.0",
     "prettier": "^3.0.3",
+    "react-devtools": "^4.28.4",
     "typescript": "^5.2.2"
   },
   "scripts": {
